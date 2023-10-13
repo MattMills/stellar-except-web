@@ -8,3 +8,4 @@ The exec/ directory has been removed from this repo per discussion with legal@pa
 Capstone access is provided by php-capstone (https://github.com/firodj/php-capstone). Yes, really.
 
 
+editors note: Some of the code is redundant, as at first things were running off capstone alone, then capstone and metadata from the filesystem, then capstone and compressed metadata from the filesystem, then the database and capstone.
