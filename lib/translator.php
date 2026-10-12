@@ -2,6 +2,9 @@
 require_once __DIR__ . '/parser.php';
 require_once __DIR__ . '/symbol_data.php';
 
+// Bump when the translation result changes shape or meaning (invalidates cached translations).
+const TRANSLATOR_VERSION = 2;
+
 // RVA of a stellaris.exe frame in a build, or null when its export is unknown.
 function frame_rva($frame, $exports)
 {
@@ -12,9 +15,14 @@ function frame_rva($frame, $exports)
 	return $frame['sign'] === '-' ? $base - $frame['offset'] : $base + $frame['offset'];
 }
 
-function is_game_frame($frame)
+// A frame of the game executable: its module is stellaris.exe, or (4.x reports leave the module
+// column empty) its symbol is one of stellaris.exe's exports.
+function is_game_frame($frame, $exports)
 {
-	return strcasecmp($frame['module'], 'stellaris.exe') === 0;
+	if ($frame['module'] !== '') {
+		return strcasecmp($frame['module'], 'stellaris.exe') === 0;
+	}
+	return $frame['offset'] !== null && isset($exports[$frame['symbol']]);
 }
 
 // Frame 1 is the faulting instruction; every other frame is a return address, which points just
@@ -32,7 +40,7 @@ function build_fit($frames, $id, SymbolData $sd)
 	$checked = 0;
 	$fit = 0;
 	foreach ($frames as $f) {
-		if (!is_game_frame($f) || $f['offset'] == 0) {
+		if (!is_game_frame($f, $exports) || $f['offset'] == 0) {
 			continue;
 		}
 		$rva = frame_rva($f, $exports);
@@ -106,8 +114,11 @@ function translate_report($parsed, SymbolData $sd, $config)
 	foreach ($frames as $f) {
 		$r = $f;
 		$r['status'] = null;
-		if (!is_game_frame($f)) {
-			$r['status'] = 'other_module';
+		$r['game'] = is_game_frame($f, $exports);
+		$r['module_inferred'] = $r['game'] && $f['module'] === '';
+		if (!$r['game']) {
+			// "(function-name not available) (+ 0)" without a module: nothing to go on
+			$r['status'] = ($f['module'] === '' && $f['offset'] === 0) ? 'no_address' : 'other_module';
 		} elseif ($f['offset'] == 0) {
 			$r['status'] = 'no_address';
 		} else {

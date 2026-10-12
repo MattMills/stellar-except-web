@@ -40,7 +40,7 @@ foreach ($it as $file) {
 	$p = $r['build']['platform'];
 	$s['platform'][$p] = isset($s['platform'][$p]) ? $s['platform'][$p] + 1 : 1;
 	foreach ($r['frames'] as $f) {
-		if (!is_game_frame($f)) {
+		if (empty($f['game'])) {
 			continue;
 		}
 		$s['game']++;

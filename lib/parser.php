@@ -9,6 +9,45 @@
 //
 //   Stack Trace:
 //     1    stellaris.exe            PHYSFS_swapSLE64 (+ 9322603)
+//
+// Frame lines seen in the wild:
+//   "  1    stellaris.exe            PHYSFS_swapSLE64 (+ 9322603)"        3.x: module, export + offset
+//   "  1                             PHYSFS_writeUBE64 (+ 4790264)"       4.x: the module column is empty
+//   "  5                             (function-name not available) (+ 0)" no address at all
+//   " 18   some.dll     `anonymous namespace'::worker (database_workers.cpp: 68)"  symbol with source line
+
+// Module column: a file name with an executable-module extension.
+const MODULE_RE = '/^(\S+\.(?:exe|dll|sys|drv|ocx|cpl))\s+(.*)$/i';
+
+function parse_frame_line($line)
+{
+	if (!preg_match('/^\s*(\d+)\s+(.*?)\s*$/', $line, $m)) {
+		return null;
+	}
+	$frame = array('frame' => (int)$m[1], 'module' => '', 'symbol' => '', 'sign' => '+', 'offset' => null, 'location' => null);
+	$rest = $m[2];
+	if (preg_match('/^(.*?)\s*\(\s*([+-])\s*(\d+)\s*\)$/', $rest, $t)) {
+		// "<symbol> (+ <offset>)"
+		$head = $t[1];
+		$frame['sign'] = $t[2];
+		$frame['offset'] = (int)$t[3];
+	} elseif (preg_match('/^(.*?)\s*\(([^()]*:\s*\d+)\)$/', $rest, $t)) {
+		// "<symbol> (<file>: <line>)" for modules with debug information
+		$head = $t[1];
+		$frame['location'] = trim($t[2]);
+	} else {
+		return null;
+	}
+	if (preg_match(MODULE_RE, $head, $t)) {
+		$frame['module'] = $t[1];
+		$head = $t[2];
+	}
+	$frame['symbol'] = trim($head);
+	if ($frame['symbol'] === '') {
+		return null;
+	}
+	return $frame;
+}
 
 function parse_exception_text($text)
 {
@@ -21,18 +60,13 @@ function parse_exception_text($text)
 			$attr[$m[1]] = $m[2];
 			continue;
 		}
-		if ($exception === '' && preg_match('/^\s*(Unhandled exception|An exception)/', $line)) {
+		if ($exception === '' && preg_match('/^\s*(Unhandled exception|An exception)/i', $line)) {
 			$exception = trim($line);
 			continue;
 		}
-		if (preg_match('/^\s*(\d+)\s+(\S+)\s+(.+?)\s*\(\s*([+-])\s*(\d+)\s*\)\s*$/', $line, $m)) {
-			$frames[] = array(
-				'frame' => (int)$m[1],
-				'module' => $m[2],
-				'symbol' => trim($m[3]),
-				'sign' => $m[4],
-				'offset' => (int)$m[5],
-			);
+		$f = parse_frame_line($line);
+		if ($f !== null) {
+			$frames[] = $f;
 		}
 	}
 	// macOS crash reports list frames as "N  module  0x<address> symbol + offset"
@@ -43,17 +77,21 @@ function parse_exception_text($text)
 // Collapse frames that repeat many times (deep recursion) into one row with a loop count.
 function dedupe_frames($frames, $threshold)
 {
+	$key = function ($f) {
+		return $f['module'] . '|' . $f['symbol'] . '|' . $f['sign'] . $f['offset'] . '|' . $f['location'];
+	};
 	$count = array();
 	foreach ($frames as $f) {
-		$k = $f['module'] . '|' . $f['symbol'] . '|' . $f['sign'] . $f['offset'];
+		$k = $key($f);
 		$count[$k] = isset($count[$k]) ? $count[$k] + 1 : 1;
 	}
 	$seen = array();
 	$out = array();
 	foreach ($frames as $f) {
-		$k = $f['module'] . '|' . $f['symbol'] . '|' . $f['sign'] . $f['offset'];
+		$k = $key($f);
 		$f['loop_count'] = $count[$k];
-		if ($count[$k] >= $threshold) {
+		// "(function-name not available) (+ 0)" lines repeat without being a loop
+		if ($count[$k] >= $threshold && $f['offset'] !== 0) {
 			if (isset($seen[$k])) {
 				continue;
 			}

@@ -17,6 +17,8 @@ $base_url = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/')
 
 try {
 	$sd = new SymbolData($config['data_dir']);
+	// cached translations are redone when the data or the translator changes
+	$data_stamp = $sd->stamp() . '/' . TRANSLATOR_VERSION;
 } catch (Exception $e) {
 	$sd = null;
 	$error = 'The symbol data is not available on this server.';
@@ -60,7 +62,7 @@ if ($sd !== null) {
 			if ($error === null) {
 				$result = translate_report(parse_exception_text(file_get_contents($path)), $sd, $config);
 				if ($token !== null) {
-					cache_translation($path, $result, $sd->stamp());
+					cache_translation($path, $result, $data_stamp);
 				}
 			}
 		}
@@ -70,10 +72,10 @@ if ($sd !== null) {
 			$error = 'That link does not point to a stored exception.txt.';
 		} else {
 			$token = $link;
-			$result = cached_translation($up['path'], $sd->stamp());
+			$result = cached_translation($up['path'], $data_stamp);
 			if ($result === null) {
 				$result = translate_report(parse_exception_text(file_get_contents($up['path'])), $sd, $config);
-				cache_translation($up['path'], $result, $sd->stamp());
+				cache_translation($up['path'], $result, $data_stamp);
 			}
 		}
 	}
@@ -126,7 +128,7 @@ if ($error !== null) {
 	$named = 0;
 	$game = 0;
 	foreach ($result['frames'] as $f) {
-		if (is_game_frame($f) && $f['status'] !== 'no_address') {
+		if (!empty($f['game']) && $f['status'] !== 'no_address') {
 			$game++;
 			if ($f['status'] === 'named') {
 				$named++;
@@ -142,6 +144,9 @@ if ($error !== null) {
 			<span class="text-muted">(<?= (int)$b['fit'] ?> of <?= (int)$b['checked'] ?> frames fit this build<?= $b['names'] === 'pdb' ? '; names from its own PDB' : '' ?>)</span></td></tr>
 		<tr><th>Named</th><td><?= $named ?> of <?= $game ?> game frames</td></tr>
 	</table>
+	<?php if ($game == 0) { ?>
+	<div class="alert alert-warning">No stellaris.exe frame in this report has an address: the crash reporter wrote <code>(function-name not available) (+ 0)</code>, or the crash happened entirely in other modules, so there is nothing to translate.</div>
+	<?php } ?>
 	<?php if ($b['checked'] > 0 && $b['fit'] * 2 < $b['checked']) { ?>
 	<div class="alert alert-warning">The stack does not fit any known <?= h($result['version']) ?> build well (modified or unknown executable?), so the names below may be wrong.</div>
 	<?php } ?>
@@ -195,8 +200,8 @@ if ($error !== null) {
 			<tr>
 				<?php if ($result['loops_removed'] > 0) { ?><td class="<?= $loop >= $config['loop_threshold'] ? 'table-danger' : '' ?>"><?= $loop ?></td><?php } ?>
 				<td><?= (int)$f['frame'] ?></td>
-				<td><?= h($f['module']) ?></td>
-				<td><?= h($f['symbol']) ?> (<?= h($f['sign']) ?> <?= (int)$f['offset'] ?>)</td>
+				<td><?= !empty($f['module_inferred']) ? '<span class="text-muted" title="The report leaves the module empty; the symbol is a stellaris.exe export">stellaris.exe</span>' : h($f['module']) ?></td>
+				<td><?= h($f['symbol']) ?> <?= $f['location'] !== null ? '(' . h($f['location']) . ')' : '(' . h($f['sign']) . ' ' . (int)$f['offset'] . ')' ?></td>
 				<td class="addr"><?= isset($f['address']) ? h($f['address']) : '' ?></td>
 				<td class="addr"><?= isset($f['function']) ? h($f['function']) . ' +0x' . dechex($f['function_offset']) : '' ?></td>
 				<td><?= $name ?></td>
