@@ -43,8 +43,17 @@ Setup
 
        <?php return array('data_dir' => '/srv/stellar-except/webdata', 'uploads_dir' => '/srv/stellar-except/exceptions');
 
-3. Route `/cached/...` to `index.php` (nginx: `try_files $uri $uri/ /index.php?$args;`). PHP 7.4 or
-   later; no extensions beyond the defaults.
+3. Route `/cached/...` to `index.php` and keep `lib/`, `tools/` and `config.local.php` private,
+   for example with nginx:
+
+       location ~ ^/(lib|tools)/ { deny all; }
+       location = /config.local.php { deny all; }
+       location ~ /cached/ {
+           rewrite ^(.*)/cached/(.*)$ $1/index.php?cached=$2 last;
+       }
+
+   PHP 7.4 or later; no extensions beyond the defaults. Keep the data directory and the uploads
+   directory outside the web root.
 
 The uploads directory keeps the 1.x layout (`YYYY/MM/DD/<time>_<ip>.txt`); set `store_uploads` to
 false to keep nothing, or `ip_in_filename` to false to leave the address out.

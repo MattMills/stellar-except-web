@@ -7,6 +7,10 @@
 require_once __DIR__ . '/../lib/config.php';
 require_once __DIR__ . '/../lib/translator.php';
 
+if (PHP_SAPI !== 'cli') {
+	http_response_code(404);
+	exit();
+}
 if ($argc < 2) {
 	fwrite(STDERR, "usage: php tools/check_corpus.php <exceptions dir> [data dir]\n");
 	exit(1);

@@ -31,6 +31,9 @@ if ($sd !== null) {
 	$link = null;
 	if (preg_match('#/cached/([A-Za-z0-9+/]+)#', $_SERVER['REQUEST_URI'], $m)) {
 		$link = $m[1];
+	} elseif (isset($_GET['cached'])) {
+		// nginx rewrite of /cached/<token> to index.php?cached=<token>
+		$link = $_GET['cached'];
 	} elseif (isset($_GET['r'])) {
 		$link = $_GET['r'];
 	}

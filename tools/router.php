@@ -3,6 +3,10 @@
 //   php -S 127.0.0.1:8099 -t . tools/router.php
 // Serves existing files (api.php, ...) and sends everything else (/, /cached/<token>) to index.php.
 
+if (PHP_SAPI !== 'cli-server') {
+	http_response_code(404);
+	exit();
+}
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $file = realpath(__DIR__ . '/..' . $path);
 if ($path !== '/' && $file !== false && is_file($file) && strpos($file, realpath(__DIR__ . '/..')) === 0) {
